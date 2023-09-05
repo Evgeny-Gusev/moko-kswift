@@ -26,7 +26,8 @@ import kotlin.reflect.KClass
 
 class SealedToSwiftEnumFeature(
     override val featureContext: KClass<ClassContext>,
-    override val filter: Filter<ClassContext>
+    override val filter: Filter<ClassContext>,
+    private val protocol: String?
 ) : ProcessorFeature<ClassContext>() {
 
     @Suppress("ReturnCount")
@@ -46,7 +47,7 @@ class SealedToSwiftEnumFeature(
 
         val originalClassName: String = getSimpleName(kmClass.name, featureContext.kLibClasses)
         val className: String = originalClassName.replace(".", "").plus("Ks")
-        val enumType: TypeSpec = TypeSpec.enumBuilder(className)
+        val enumType: TypeSpec.Builder = TypeSpec.enumBuilder(className)
             .addDoc("selector: ${featureContext.prefixedUniqueId}")
             .apply {
                 typeVariables.forEach { addTypeVariable(it) }
@@ -69,9 +70,12 @@ class SealedToSwiftEnumFeature(
                     sealedCases = sealedCases
                 )
             )
-            .build()
 
-        processorContext.fileSpecBuilder.addType(enumType)
+        if (protocol != null) {
+            enumType.addSuperType(TypeVariableName(name = protocol))
+        }
+
+        processorContext.fileSpecBuilder.addType(enumType.build())
     }
 
     private fun buildEnumConstructor(
@@ -147,7 +151,7 @@ class SealedToSwiftEnumFeature(
         val name: String = if (subclassName.startsWith(kmClass.name)) {
             subclassName.removePrefix(kmClass.name).removePrefix(".")
         } else subclassName.removePrefix(kmClass.name.substringBeforeLast("/")).removePrefix("/")
-        val decapitalizedName: String = name.decapitalize(Locale.ROOT)
+        val decapitalizedName: String = name.replaceFirstChar { it.lowercase(Locale.ROOT) }
 
         val isObject: Boolean = Flag.Class.IS_OBJECT(sealedCaseClass.flags)
         val caseArg = sealedCaseClass.getDeclaredTypeNameWithGenerics(
@@ -268,12 +272,13 @@ class SealedToSwiftEnumFeature(
 
     class Config : BaseConfig<ClassContext> {
         override var filter: Filter<ClassContext> = Filter.Exclude(emptySet())
+        var protocol: String? = null
     }
 
     companion object : Factory<ClassContext, SealedToSwiftEnumFeature, Config> {
         override fun create(block: Config.() -> Unit): SealedToSwiftEnumFeature {
             val config = Config().apply(block)
-            return SealedToSwiftEnumFeature(featureContext, config.filter)
+            return SealedToSwiftEnumFeature(featureContext, config.filter, config.protocol)
         }
 
         override val featureContext: KClass<ClassContext> = ClassContext::class
